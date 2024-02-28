@@ -93,8 +93,8 @@ def game_over():
 
 def reset_game():
     global snake_position, snake_body, fruit_position, fruit_spawn, score, direction
-    snake_position = [100, 50]
-    snake_body = [[100, 50], [90, 50], [80, 50], [70, 50]]
+    snake_position = [360, 240]  # Coloca la serpiente en el centro de la ventana
+    snake_body = [[360, 240], [350, 240], [340, 240], [330, 240]]  # Ajusta el cuerpo acorde
     fruit_position = [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]
     fruit_spawn = True
     score = 0
@@ -113,7 +113,7 @@ def initialize_q_table():
         q_table = np.load("q_table.npy")
     except FileNotFoundError:
         # Usa la función get_state ahora que ya está definida
-        dummy_state = get_state({'snake_position': [100, 50], 'snake_body': [[100, 50], [90, 50], [80, 50], [70, 50]], 'direction': 'RIGHT', 'fruit_position': [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]})
+        dummy_state = get_state({'snake_position': [360, 240], 'snake_body': [[360, 240], [350, 240], [340, 240], [330, 240]], 'direction': 'RIGHT', 'fruit_position': [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]})
         q_table = np.zeros((2**len(dummy_state), 3))
 
 initialize_q_table()
@@ -121,7 +121,7 @@ initialize_q_table()
 # Parámetros de aprendizaje
 learning_rate = 0.1
 discount_factor = 0.99
-exploration_rate = 1.0
+exploration_rate = 5.0
 max_exploration_rate = 1.0
 min_exploration_rate = 0.01
 exploration_decay_rate = 0.01
@@ -181,7 +181,10 @@ while True:
 
     game_window.fill(black)
     for pos in snake_body:
-        pygame.draw.rect(game_window, green, pygame.Rect(pos[0], pos[1], 10, 10))
+        if pos == snake_body[0]:  # Si es la cabeza de la serpiente
+            pygame.draw.rect(game_window, red, pygame.Rect(pos[0], pos[1], 10, 10))
+        else:  # Para el resto del cuerpo
+            pygame.draw.rect(game_window, green, pygame.Rect(pos[0], pos[1], 10, 10))
     pygame.draw.rect(game_window, white, pygame.Rect(fruit_position[0], fruit_position[1], 10, 10))
 
     show_score(1, white, 'times new roman', 20)
