@@ -4,6 +4,16 @@ import time
 import random
 import numpy as np
 
+# Función para cargar el número de ejecuciones desde un archivo
+def load_runs():
+    try:
+        with open("runs.txt", "r") as file:
+            return int(file.read())
+    except FileNotFoundError:
+        return 0  # Si el archivo no existe, empieza desde 0
+    
+
+runs = load_runs()
 snake_speed = 15
 window_x = 720
 window_y = 480
@@ -20,11 +30,19 @@ fps = pygame.time.Clock()
 
 snake_position = [100, 50]
 snake_body = [[100, 50], [90, 50], [80, 50], [70, 50]]
-fruit_position = [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]
+fruit_positions = [[random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10] for _ in range(5)]  # Genera 5 frutas
 fruit_spawn = True
 direction = 'RIGHT'
 change_to = direction
 score = 0
+
+
+
+# Función para guardar el número de ejecuciones en un archivo
+def save_runs(runs):
+    with open("runs.txt", "w") as file:
+        file.write(str(runs))
+
 
 # Definiciones de funciones
 def get_state(game):
@@ -39,7 +57,15 @@ def get_state(game):
     dir_u = game['direction'] == 'UP'
     dir_d = game['direction'] == 'DOWN'
 
+    # Calculate distances to the two closest fruits and discretize
+    closest_distances = find_distances_to_fruits(game['snake_position'], game['fruit_positions'])
+    closest_distances = [discretize_distance(d) for d in closest_distances]
+
+    # Flatten the closest_distances list
+    closest_distances_flat = [item for sublist in closest_distances for item in sublist]
+
     state = [
+        # Danger indicators
         (dir_r and is_collision(point_r, game)) or (dir_l and is_collision(point_l, game)) or 
         (dir_u and is_collision(point_u, game)) or (dir_d and is_collision(point_d, game)),
         (dir_u and is_collision(point_r, game)) or (dir_d and is_collision(point_l, game)) or 
@@ -47,13 +73,11 @@ def get_state(game):
         (dir_d and is_collision(point_r, game)) or (dir_u and is_collision(point_l, game)) or 
         (dir_r and is_collision(point_u, game)) or (dir_l and is_collision(point_d, game)),
         dir_l, dir_r, dir_u, dir_d,
-        game['fruit_position'][0] < game['snake_position'][0],  # Food left
-        game['fruit_position'][0] > game['snake_position'][0],  # Food right
-        game['fruit_position'][1] < game['snake_position'][1],  # Food up
-        game['fruit_position'][1] > game['snake_position'][1]   # Food down
-    ]
+    ] + closest_distances_flat  # Append the flattened distance indicators
 
     return np.array(state, dtype=int)
+
+
 
 def is_collision(point, game):
     if point[0] < 0 or point[0] > window_x-10 or point[1] < 0 or point[1] > window_y-10:
@@ -61,6 +85,18 @@ def is_collision(point, game):
     if point in game['snake_body'][1:]:
         return True
     return False
+
+def discretize_distance(distancia):
+    # Retorna un vector binario en lugar de un valor escalar
+    if distancia < 50:
+        return [1, 0, 0, 0]  # Muy cerca
+    elif distancia < 100:
+        return [0, 1, 0, 0]  # Cerca
+    elif distancia < 150:
+        return [0, 0, 1, 0]  # Lejos
+    else:
+        return [0, 0, 0, 1]  # Muy lejos
+
 
 def update_direction(current_direction, action):
     directions = ['UP', 'RIGHT', 'DOWN', 'LEFT']
@@ -81,21 +117,22 @@ def show_score(choice, color, font, size):
     score_rect = score_surface.get_rect()
     game_window.blit(score_surface, score_rect)
 
-def game_over():
-    print('game over' )
-    global exploration_rate
+def game_over(score):
+    global exploration_rate, runs
+    print(f'Game Over. Runs: {runs}, Score: {score}')
 
     np.save("q_table.npy", q_table)
-    # Mostrar algún mensaje de Game Over si lo deseas
     reset_game()
-    # También podrías querer reducir la tasa de exploración aquí si usas un enfoque de decaimiento
-    exploration_rate *= 0.99  # Solo un ejemplo, ajusta según sea necesario
+    exploration_rate *= 0.99
 
 def reset_game():
-    global snake_position, snake_body, fruit_position, fruit_spawn, score, direction
+    global snake_position, snake_body, fruit_positions, fruit_spawn, score, direction, runs
+    runs += 1  # Incrementa el contador de partidas
+    save_runs(runs)  # Guarda el número de ejecuciones actualizado en el archivo
     snake_position = [360, 240]  # Coloca la serpiente en el centro de la ventana
     snake_body = [[360, 240], [350, 240], [340, 240], [330, 240]]  # Ajusta el cuerpo acorde
-    fruit_position = [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]
+    # Regenerar todas las frutas
+    fruit_positions = [[random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10] for _ in range(5)]
     fruit_spawn = True
     score = 0
     direction = 'RIGHT'
@@ -105,6 +142,28 @@ def state_to_index(state):
     """Convierte un estado binario a un índice entero."""
     # Convierte el array binario a un string de dígitos y luego a un entero base 2
     return int("".join(str(int(x)) for x in state), 2)
+
+def find_closest_fruit(snake_position, fruit_positions):
+    """
+    Encuentra la fruta más cercana a la posición actual de la serpiente.
+    """
+    closest_fruit = None
+    min_distance = float('inf')
+    for fruit_position in fruit_positions:
+        distance = np.linalg.norm(np.array(snake_position) - np.array(fruit_position))
+        if distance < min_distance:
+            min_distance = distance
+            closest_fruit = fruit_position
+    return closest_fruit
+
+def find_distances_to_fruits(snake_position, fruit_positions):
+    """
+    Calcula las distancias de la posición de la serpiente a todas las frutas y las retorna ordenadas.
+    """
+    distances = [np.linalg.norm(np.array(snake_position) - np.array(fruit)) for fruit in fruit_positions]
+    distances.sort()
+    return distances[:2]  
+
     
 def initialize_q_table():
     global q_table  # Asegúrate de declarar q_table como global si va a ser usada fuera de esta función
@@ -113,7 +172,7 @@ def initialize_q_table():
         q_table = np.load("q_table.npy")
     except FileNotFoundError:
         # Usa la función get_state ahora que ya está definida
-        dummy_state = get_state({'snake_position': [360, 240], 'snake_body': [[360, 240], [350, 240], [340, 240], [330, 240]], 'direction': 'RIGHT', 'fruit_position': [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]})
+        dummy_state = get_state({'snake_position': [360, 240], 'snake_body': [[360, 240], [350, 240], [340, 240], [330, 240]], 'direction': 'RIGHT', 'fruit_positions': [random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10]})
         q_table = np.zeros((2**len(dummy_state), 3))
 
 initialize_q_table()
@@ -125,8 +184,8 @@ exploration_rate = 5.0
 max_exploration_rate = 1.0
 min_exploration_rate = 0.01
 exploration_decay_rate = 0.01
+move_count = 0
 
-# Bucle principal del juego
 # Bucle principal del juego
 while True:
     for event in pygame.event.get():
@@ -134,11 +193,24 @@ while True:
             pygame.quit()
             quit()
 
+    # No necesitas buscar la fruta más cercana para el estado ya que vamos a pasar todas las frutas
+    # closest_fruit = find_closest_fruit(snake_position, fruit_positions)
+    # fruit_position = closest_fruit
+    move_count += 1
+    time_based_reward_multiplier = 1 + (move_count // 100) * 0.1  # Aumenta en 0.1 por cada 100 movimientos
+
+
+    # Continúa con el bucle principal del juego
+    if not fruit_spawn:
+        fruit_positions.append([random.randrange(1, (window_x//10)) * 10, random.randrange(1, (window_y//10)) * 10])  # Añade una nueva fruta si se necesita
+        fruit_spawn = True
+
+    # Actualizar el estado para pasar todas las posiciones de las frutas
     state = get_state({
         'snake_position': snake_position,
         'snake_body': snake_body,
         'direction': direction,
-        'fruit_position': fruit_position
+        'fruit_positions': fruit_positions  # Ahora pasamos todas las posiciones
     })
 
     state_index = state_to_index(state)  # Convertir el estado a un índice entero
@@ -165,19 +237,19 @@ while True:
 
     # Verificar colisiones con las paredes o consigo misma
     if snake_position[0] < 0 or snake_position[0] > window_x-10 or snake_position[1] < 0 or snake_position[1] > window_y-10 or snake_position in snake_body[1:]:
-        game_over()
+        game_over(score)
 
     # Insertar nueva posición de la cabeza y verificar si come fruta
     snake_body.insert(0, list(snake_position))
-    if snake_position == fruit_position:
+    if snake_position in fruit_positions:
         score += 10
         fruit_spawn = False
+        fruit_positions.remove(snake_position)  # Remueve la fruta comida de la lista
+        # Ajusta la recompensa por comer fruta basada en el tiempo
+        reward = 10 * time_based_reward_multiplier
     else:
         snake_body.pop()
-
-    if not fruit_spawn:
-        fruit_position = [random.randrange(1, (window_x // 10)) * 10, random.randrange(1, (window_y // 10)) * 10]
-    fruit_spawn = True
+        reward = -10 
 
     game_window.fill(black)
     for pos in snake_body:
@@ -185,8 +257,10 @@ while True:
             pygame.draw.rect(game_window, red, pygame.Rect(pos[0], pos[1], 10, 10))
         else:  # Para el resto del cuerpo
             pygame.draw.rect(game_window, green, pygame.Rect(pos[0], pos[1], 10, 10))
-    pygame.draw.rect(game_window, white, pygame.Rect(fruit_position[0], fruit_position[1], 10, 10))
-
+    
+    for fruit_pos in fruit_positions:
+        pygame.draw.rect(game_window, red, pygame.Rect(fruit_pos[0], fruit_pos[1], 10, 10))
+    
     show_score(1, white, 'times new roman', 20)
     pygame.display.update()
     fps.tick(snake_speed)
@@ -195,14 +269,12 @@ while True:
         'snake_position': snake_position,
         'snake_body': snake_body,
         'direction': direction,
-        'fruit_position': fruit_position
+        'fruit_positions': fruit_positions  # Pasamos todas las posiciones para el nuevo estado también
     })
     new_state_index = state_to_index(new_state)
-    reward = 10 if snake_position == fruit_position else -10
 
     q_table[state_index, action] = q_table[state_index, action] * (1 - learning_rate) + \
         learning_rate * (reward + discount_factor * np.max(q_table[new_state_index]))
 
     exploration_rate = min_exploration_rate + \
         (max_exploration_rate - min_exploration_rate) * np.exp(-exploration_decay_rate)
-
