@@ -74,7 +74,7 @@ def get_state(game):
         (dir_r and is_collision(point_u, game)) or (dir_l and is_collision(point_d, game)),
         dir_l, dir_r, dir_u, dir_d,
     ] + closest_distances_flat  # Append the flattened distance indicators
-
+    # print(state)
     return np.array(state, dtype=int)
 
 
@@ -180,12 +180,12 @@ initialize_q_table()
 # Parámetros de aprendizaje
 learning_rate = 0.1
 discount_factor = 0.99
-exploration_rate = 5.0
+exploration_rate = 1.0
 max_exploration_rate = 1.0
 min_exploration_rate = 0.01
 exploration_decay_rate = 0.01
 move_count = 0
-
+reward=0
 # Bucle principal del juego
 while True:
     for event in pygame.event.get():
@@ -216,10 +216,15 @@ while True:
     state_index = state_to_index(state)  # Convertir el estado a un índice entero
 
     exploration_rate_threshold = random.uniform(0, 1)
+    print(f'threshold: {exploration_rate_threshold}, exploration: {exploration_rate}')
+
     if exploration_rate_threshold > exploration_rate:
         action = np.argmax(q_table[state_index])  # Usar el índice entero con q_table
+        print("IA decision")
     else:
         action = random.randint(0, 2)
+        print("Random")
+
 
     # Actualizar la dirección basada en la acción
     direction = update_direction(direction, action)
@@ -249,7 +254,7 @@ while True:
         reward = 10 * time_based_reward_multiplier
     else:
         snake_body.pop()
-        reward = -10 
+        # reward = -10 
 
     game_window.fill(black)
     for pos in snake_body:
@@ -277,4 +282,5 @@ while True:
         learning_rate * (reward + discount_factor * np.max(q_table[new_state_index]))
 
     exploration_rate = min_exploration_rate + \
-        (max_exploration_rate - min_exploration_rate) * np.exp(-exploration_decay_rate)
+        (max_exploration_rate - min_exploration_rate) * np.exp(-exploration_decay_rate * runs)
+
